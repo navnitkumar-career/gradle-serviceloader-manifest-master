@@ -1,0 +1,16 @@
+package com.github.delphyne.gradle.plugins.serviceloader_manifest.dsl
+
+def buildScript = context(scriptType: 'gradle')
+def project = context(ctype: 'org.gradle.api.Project')
+
+contributor([buildScript, project]) {
+	method name: 'serviceLoader', type: 'void', params: [closure: 'groovy.lang.Closure']
+	property name: 'serviceLoader', type: 'com.github.delphyne.gradle.plugins.serviceloader_manifest.extensions.ServiceLoaderManifestExtension'
+}
+
+def serviceLoaderBody = context(scope: closureScope())
+contributor(serviceLoaderBody) {
+	if (enclosingCall('serviceLoader')) {
+		delegatesTo(findClass('com.github.delphyne.gradle.plugins.serviceloader_manifest.extensions.ServiceLoaderManifestExtension'))
+	}
+}

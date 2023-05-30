@@ -1,0 +1,104 @@
+apply plugin: 'java-gradle-plugin'
+apply plugin: GroovyPlugin
+apply plugin: MavenPlugin
+apply plugin: 'com.github.delphyne.default-jars'
+apply plugin: 'com.github.delphyne.jar-attributes'
+
+buildscript {
+	repositories {
+		maven {
+			url 'https://delphyne.github.io/.m2/'
+		}
+	}
+	dependencies {
+		classpath 'com.github.delphyne:jar-attributes-gradle-plugin:1.0.1'
+		classpath 'com.github.delphyne:default-jars-gradle-plugin:1.0.2'
+	}
+}
+
+group='com.github.delphyne'
+version = System.getenv('TRAVIS_TAG') ?: System.getenv('TRAVIS_BUILD_NUMBER') ?
+		"${System.getenv('TRAVIS_BUILD_NUMBER')}-travis" :
+		version
+
+dependencies {
+	testCompile gradleTestKit()
+}
+
+test {
+	useTestNG()
+	testLogging {
+		exceptionFormat = 'full'
+	}
+	def tmpDir = new File(buildDir, 'tmp')
+	systemProperty 'java.io.tmpdir', tmpDir.canonicalPath
+	doFirst {
+		project.mkdir(tmpDir)
+	}
+}
+
+/*
+  * Make sure our DSL helper file makes it into the jar for IDE auto-complete
+  */
+def stageGroovyDSL = tasks.create('stageGroovyDSL', Copy).with {
+	from(sourceSets.main.allSource) {
+		include '**/*.gdsl'
+	}
+	into sourceSets.main.output.classesDir
+	it
+}
+tasks.findByName('jar')?.dependsOn stageGroovyDSL
+
+jarAttributes {
+	'jdk-vendor' Runtime.class.package.implementationVendor
+	'jdk-version' sysprop('java.version')
+	'gradle-version' { project.getGradle().gradleVersion }
+	'groovy-version' GroovySystem.version
+	'repo-slug' env('TRAVIS_REPO_SLUG')
+	'built-by' sysprop('user.name')
+	branch env('TRAVIS_BRANCH')
+	commit env('TRAVIS_COMMIT')
+	tag env('TRAVIS_TAG')
+	'build-number' env('TRAVIS_BUILD_NUMBER')
+}
+
+def m2repoPath = (System.getenv('M2_REPO_DIRECTORY') ?: buildDir.path) + "/.m2"
+uploadArchives {
+	repositories {
+		mavenDeployer {
+			repository(url: new File(m2repoPath).toURL())
+			pom.project {
+				licenses {
+					license {
+						name 'The Apache Software License, Version 2.0'
+						url 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+					}
+				}
+			}
+		}
+	}
+}
+
+task createPluginClasspath {
+	description = 'Writes a manifest of the classpath to be used within tests.'
+	def outputDir = file("${buildDir}/${name}")
+	inputs.files sourceSets.main.runtimeClasspath
+	outputs.dir(outputDir)
+	doLast {
+		outputDir.mkdirs()
+		file("${outputDir}/plugin-classpath.txt").text = sourceSets.main.runtimeClasspath.join("\n")
+	}
+	processTestResources.dependsOn it
+}
+
+dependencies {
+	testCompile files(createPluginClasspath)
+}
+
+task copyJavaTestClassesToResources(type: Copy) {
+	def pl = project.convention.getPlugin(JavaPluginConvention)
+	from pl.sourceSets.findByName(SourceSet.TEST_SOURCE_SET_NAME).allJava
+	into pl.sourceSets.findByName(SourceSet.TEST_SOURCE_SET_NAME).output.resourcesDir
+	project.tasks.findByName('processTestResources').dependsOn(it)
+}
+
